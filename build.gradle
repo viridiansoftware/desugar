@@ -103,7 +103,7 @@ task desugarTests(type: JavaExec, dependsOn: [makeDesugarOutputDirs, jar, testCl
   jvmArgs '-Djdk.internal.lambda.dumpProxyClasses=build/desugar/dump/'
   args '--input', 'build/classes/java/test', '--output', 'build/desugar/output/test/', 
 		'--classpath_entry', "build/libs/desugar-${project.version}.jar", '--verbose',
-		'--allow_empty_bootclasspath'
+		'--bootclasspath_entry', "bootstrap/jdk11/java.base.jar", '--core_library'
 }
 
 classes.dependsOn bugsJar

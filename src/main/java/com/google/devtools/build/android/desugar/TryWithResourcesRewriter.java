@@ -17,7 +17,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.objectweb.asm.Opcodes.ACC_STATIC;
 import static org.objectweb.asm.Opcodes.ACC_SYNTHETIC;
-import static org.objectweb.asm.Opcodes.ASM6;
+import static org.objectweb.asm.Opcodes.ASM7;
 import static org.objectweb.asm.Opcodes.INVOKEINTERFACE;
 import static org.objectweb.asm.Opcodes.INVOKESTATIC;
 import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
@@ -130,7 +130,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
       Set<String> visitedExceptionTypes,
       AtomicInteger numOfTryWithResourcesInvoked,
       boolean hasCloseResourceMethod) {
-    super(ASM6, classVisitor);
+    super(ASM7, classVisitor);
     this.classLoader = classLoader;
     this.visitedExceptionTypes = visitedExceptionTypes;
     this.numOfTryWithResourcesInvoked = numOfTryWithResourcesInvoked;
@@ -186,7 +186,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
     }
     if (isSyntheticCloseResourceMethod(access, name, desc)) {
       checkState(closeResourceMethod == null, "The TWR rewriter has been used.");
-      closeResourceMethod = new MethodNode(ASM6, access, name, desc, signature, exceptions);
+      closeResourceMethod = new MethodNode(ASM7, access, name, desc, signature, exceptions);
       // Run the TWR desugar pass over the $closeResource(Throwable, AutoCloseable) first, for
       // example, to rewrite calls to AutoCloseable.close()..
       TryWithResourceVisitor twrVisitor =
@@ -264,7 +264,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
         MethodVisitor methodVisitor,
         ClassLoader classLoader,
         @Nullable BytecodeTypeInference typeInference) {
-      super(ASM6, methodVisitor);
+      super(ASM7, methodVisitor);
       this.classLoader = classLoader;
       this.internalName = internalName;
       this.methodSignature = methodSignature;
@@ -411,7 +411,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
     public MethodVisitor visitMethod(
         int access, String name, String desc, String signature, String[] exceptions) {
       MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
-      return new MethodVisitor(ASM6, mv) {
+      return new MethodVisitor(ASM7, mv) {
         @Override
         public void visitMethodInsn(
             int opcode, String owner, String name, String desc, boolean itf) {

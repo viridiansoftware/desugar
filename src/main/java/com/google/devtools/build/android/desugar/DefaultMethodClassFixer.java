@@ -388,7 +388,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
     private String stubbedInterfaceName;
 
     public DefaultMethodStubber() {
-      super(Opcodes.ASM6);
+      super(Opcodes.ASM7);
     }
 
     @Override
@@ -469,7 +469,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
     private boolean found;
 
     public DefaultMethodFinder() {
-      super(Opcodes.ASM6);
+      super(Opcodes.ASM7);
     }
 
     @Override
@@ -511,7 +511,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
   private class InstanceMethodRecorder extends ClassVisitor {
 
     public InstanceMethodRecorder() {
-      super(Opcodes.ASM6);
+      super(Opcodes.ASM7);
     }
 
     @Override
@@ -547,7 +547,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
     private boolean hasDefaultMethods;
 
     public InterfaceInitializationNecessityDetector(String internalName) {
-      super(Opcodes.ASM6);
+      super(Opcodes.ASM7);
       this.internalName = internalName;
     }
 
@@ -581,7 +581,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
         hasDefaultMethods = isNonBridgeDefaultMethod(access);
       }
       if ("<clinit>".equals(name)) {
-        return new MethodVisitor(Opcodes.ASM6) {
+        return new MethodVisitor(Opcodes.ASM7) {
           @Override
           public void visitFieldInsn(int opcode, String owner, String name, String desc) {
             if (opcode == Opcodes.PUTSTATIC && internalName.equals(owner)) {

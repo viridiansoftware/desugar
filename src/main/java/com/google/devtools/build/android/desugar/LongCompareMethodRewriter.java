@@ -13,7 +13,7 @@
 // limitations under the License.
 package com.google.devtools.build.android.desugar;
 
-import static org.objectweb.asm.Opcodes.ASM6;
+import static org.objectweb.asm.Opcodes.ASM7;
 import static org.objectweb.asm.Opcodes.INVOKESTATIC;
 import static org.objectweb.asm.Opcodes.LCMP;
 
@@ -27,7 +27,7 @@ import org.objectweb.asm.MethodVisitor;
 public class LongCompareMethodRewriter extends ClassVisitor {
 
   public LongCompareMethodRewriter(ClassVisitor cv) {
-    super(ASM6, cv);
+    super(ASM7, cv);
   }
 
   @Override
@@ -40,7 +40,7 @@ public class LongCompareMethodRewriter extends ClassVisitor {
   private static class LongCompareMethodVisitor extends MethodVisitor {
 
     public LongCompareMethodVisitor(MethodVisitor visitor) {
-      super(ASM6, visitor);
+      super(ASM7, visitor);
     }
 
     @Override
