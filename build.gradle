@@ -1,0 +1,167 @@
+buildscript {
+    repositories {
+    	mavenLocal()
+        mavenCentral()
+        jcenter()
+        maven { url 'https://plugins.gradle.org/m2/' }
+		maven { url "https://oss.sonatype.org/service/local/repositories/releases/content/" }
+    }
+    dependencies {
+		classpath 'io.codearte.gradle.nexus:gradle-nexus-staging-plugin:0.9.0'
+	}
+}
+
+if(project.hasProperty('ossrhUser') && project.hasProperty("release")) {
+	apply plugin: "io.codearte.nexus-staging"
+
+	nexusStaging {
+		packageGroup = 'com.viridiansoftware'
+		username = ossrhUser
+		password = ossrhPassword
+	}
+}
+
+ext {
+	
+}
+
+repositories {
+	mavenLocal()
+	mavenCentral()
+	jcenter()
+	maven { url "https://oss.sonatype.org/service/local/repositories/releases/content/" }
+	maven { url 'https://maven.google.com' }
+}
+
+apply plugin: "signing"
+apply plugin: "maven"
+apply plugin: "java"
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+group = 'com.viridiansoftware'
+version = "1.0.0-SNAPSHOT"
+
+task sourcesJar(type: Jar) {
+	archiveClassifier = 'sources'
+	from sourceSets.main.allSource
+}
+		
+task javadocJar(type: Jar) {
+	archiveClassifier = 'javadoc'
+	from javadoc
+}
+
+task bugsJar(type: Jar){
+	archiveClassifier = "bugs"
+	from "bugs/"
+	include '**/*.class'
+}
+
+jar {
+	from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+}
+		
+artifacts {
+	archives javadocJar, sourcesJar
+}
+
+dependencies {
+	compile "com.google.code.findbugs:jsr305:3.0.1"
+	compile "com.google.guava:guava:28.0-jre"
+	compile "org.ow2.asm:asm:7.1"
+	compile "org.ow2.asm:asm-tree:7.1"
+	compile "org.ow2.asm:asm-commons:7.1"
+	compile "com.google.errorprone:error_prone_annotations:2.0.21"
+	compile "com.google.dagger:dagger:2.23.2"
+	compile "com.google.dagger:dagger:2.23.2"
+	compile "com.google.auto.value:auto-value-annotations:1.6.2"
+	
+	annotationProcessor "com.google.auto.value:auto-value:1.6.2"
+	
+	testCompile "junit:junit:4.8.1"
+	testCompile "com.google.truth:truth:0.43"
+	testCompile "org.ow2.asm:asm-util:7.1"
+	testCompile "com.google.guava:guava:28.0-jre"
+	testCompile "com.google.guava:guava-testlib:28.0-jre"
+	testCompile files("build/libs/desugar-${project.version}-bugs.jar")
+}
+
+task makeDesugarOutputDirs {
+	doLast {
+		mkdir 'build/desugar/dump/'
+		mkdir 'build/desugar/output/test/'
+	}
+}
+
+task desugarTests(type: JavaExec, dependsOn: [makeDesugarOutputDirs, jar, testClasses]) {
+  classpath = sourceSets.main.runtimeClasspath
+
+  main = 'com.google.devtools.build.android.desugar.Desugar'
+
+  jvmArgs '-Djdk.internal.lambda.dumpProxyClasses=build/desugar/dump/'
+  args '--input', 'build/classes/java/test', '--output', 'build/desugar/output/test/', 
+		'--classpath_entry', "build/libs/desugar-${project.version}.jar", '--verbose',
+		'--allow_empty_bootclasspath'
+}
+
+classes.dependsOn bugsJar
+test.dependsOn desugarTests
+
+sourceSets {
+    main {
+        java {
+            srcDir "src/main/java"
+            exclude "${projectDir}/src/main/java/package/Utils.java"
+        }
+    }
+}
+
+// Maven Central publication
+if(project.hasProperty('ossrhUser')) {
+	signing {
+		sign configurations.archives
+	}
+	
+	uploadArchives {
+		repositories {
+			mavenDeployer {
+				// POM signature
+				beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+				// Target repository
+				repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
+					authentication(userName: ossrhUser, password: ossrhPassword)
+				}
+				pom.project {
+					name project.name
+					description project.description
+					packaging 'jar'
+					url 'https://github.com/viridiansoftware/desugar'
+
+					scm {
+						connection 'scm:git:https://github.com/viridiansoftware/desugar.git'
+						developerConnection 'scm:git:git@github.com:viridiansoftware/desugar.git'
+						url 'https://github.com/viridiansoftware/desugar.git'
+					}
+
+					licenses {
+						license {
+							name 'Apache License 2.0'
+							url 'https://opensource.org/licenses/Apache-2.0'
+							distribution 'repo'
+						}
+					}
+
+					developers {
+						developer {
+							id = 'tomcashman'
+							name = 'Thomas Cashman'
+							email = 'thomascashman404@gmail.com'
+						}
+					}
+				}
+			}
+		}
+	}
+}
