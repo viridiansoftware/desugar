@@ -49,10 +49,45 @@ public class ClassUsingTryWithResources {
     }
   }
 
+  /** A resource inheriting the close() method from its parent. */
+  public static class InheritanceResource extends SimpleResource {}
+
   /** This method will always throw {@link java.lang.Exception}. */
   public static void simpleTryWithResources() throws Exception {
     // Throwable.addSuppressed(Throwable) should be called in the following block.
     try (SimpleResource resource = new SimpleResource()) {
+      resource.call(true);
+    }
+  }
+
+  /** A simple resource type for testing try-with-resources with multiple resources. */
+  public static class SimpleCloseable implements Closeable {
+
+    /** This method tests a method with method reference as resources. */
+    public void multipleTryWithResources() throws Exception {
+      try (Closeable resource1 = new SimpleResource();
+          Closeable resource2 = this::close;
+          Closeable resource3 = new SimpleResource()) {}
+    }
+
+    @Override
+    public void close() throws IOException {
+      throw new IOException("exception in close().");
+    }
+  }
+
+  public static void multipleTryWithResources() throws Exception {
+    SimpleCloseable resource = new SimpleCloseable();
+    resource.multipleTryWithResources();
+  }
+
+  /**
+   * This method useds {@link InheritanceResource}, which inherits all methods from {@link
+   * SimpleResource}.
+   */
+  public static void inheritanceTryWithResources() throws Exception {
+    // Throwable.addSuppressed(Throwable) should be called in the following block.
+    try (InheritanceResource resource = new InheritanceResource()) {
       resource.call(true);
     }
   }

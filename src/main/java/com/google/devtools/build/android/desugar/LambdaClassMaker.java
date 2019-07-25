@@ -55,12 +55,9 @@ class LambdaClassMaker {
           + invokerInternalName + " using " + bootstrapMethod + " with arguments " + bsmArgs, e);
     }
 
-    ImmutableList<Path> unprocessed = findUnprocessed(invokerInternalName + "$$Lambda$");
-    if(unprocessed != null && !unprocessed.isEmpty()) {
-      Path generatedClassFile = getOnlyElement(unprocessed);
-      generatedClasses.put(generatedClassFile, lambdaInfo);
-      existingPaths.add(generatedClassFile);
-    }
+    Path generatedClassFile = getOnlyElement(findUnprocessed(invokerInternalName + "$$Lambda$"));
+    generatedClasses.put(generatedClassFile, lambdaInfo);
+    existingPaths.add(generatedClassFile);
   }
 
   /**
@@ -84,12 +81,12 @@ class LambdaClassMaker {
     if (!Files.exists(rootPathPrefix.getParent())) {
       return ImmutableList.of();
     }
-    try (Stream<Path> paths =
-        Files.list(rootPathPrefix.getParent())
-            .filter(
-                path -> path != null && path.toString().startsWith(rootPathPrefixStr)
-                    && !existingPaths.contains(path))) {
-      return paths.collect(ImmutableList.toImmutableList());
+    try (Stream<Path> paths = Files.list(rootPathPrefix.getParent())) {
+      return paths
+          .filter(
+              path ->
+                  path.toString().startsWith(rootPathPrefixStr) && !existingPaths.contains(path))
+          .collect(ImmutableList.toImmutableList());
     }
   }
 }
