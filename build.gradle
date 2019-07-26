@@ -44,7 +44,7 @@ targetCompatibility = 1.8
 mainClassName = "com.google.devtools.build.android.desugar.Desugar"
 
 group = 'com.viridiansoftware'
-version = "1.0.0-SNAPSHOT"
+version = "1.0.0"
 
 task sourcesJar(type: Jar) {
 	archiveClassifier = 'sources'
