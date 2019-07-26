@@ -50,9 +50,30 @@ public final class ThrowableExtension {
   static final int API_LEVEL;
 
   static {
-    AbstractDesugaringStrategy strategy = new ReuseDesugaringStrategy();
+    AbstractDesugaringStrategy strategy;
+    Integer apiLevel = null;
+    try {
+      apiLevel = readApiLevelFromBuildVersion();
+      if (apiLevel != null && apiLevel.intValue() >= 19) {
+        strategy = new ReuseDesugaringStrategy();
+      } else if (useMimicStrategy()) {
+        strategy = new MimicDesugaringStrategy();
+      } else {
+        strategy = new NullDesugaringStrategy();
+      }
+    } catch (Throwable e) {
+      // This catchall block is intentionally created to avoid anything unexpected, so that
+      // the desugared app will continue running in case of exceptions.
+      System.err.println(
+              "An error has occurred when initializing the try-with-resources desuguring strategy. "
+                      + "The default strategy "
+                      + NullDesugaringStrategy.class.getName()
+                      + "will be used. The error is: ");
+      e.printStackTrace(System.err);
+      strategy = new NullDesugaringStrategy();
+    }
     STRATEGY = strategy;
-    API_LEVEL = 19;
+    API_LEVEL = apiLevel == null ? 1 : apiLevel.intValue();
   }
 
   public static AbstractDesugaringStrategy getStrategy() {
@@ -146,7 +167,16 @@ public final class ThrowableExtension {
               + ANDROID_OS_BUILD_VERSION
               + ".SDK_INT due to the following exception.");
       e.printStackTrace(System.err);
-      return null;
+
+      //Fallback to JRE check
+      String jreVersion = System.getProperty("java.version");
+      if (jreVersion.startsWith("1.6")) {
+        return 17;
+      } else if(jreVersion.startsWith("1.7")) {
+        return 19;
+      } else {
+        return 24;
+      }
     }
   }
 

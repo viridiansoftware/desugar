@@ -172,7 +172,7 @@ class Desugar {
 
     @Option(
       name = "min_sdk_version",
-      defaultValue = "1",
+      defaultValue = "19",
       category = "misc",
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
