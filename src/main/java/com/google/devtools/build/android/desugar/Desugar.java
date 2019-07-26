@@ -34,12 +34,8 @@ import com.google.devtools.build.android.desugar.io.IndexedInputs;
 import com.google.devtools.build.android.desugar.io.InputFileProvider;
 import com.google.devtools.build.android.desugar.io.OutputFileProvider;
 import com.google.devtools.build.android.desugar.io.ThrowingClassLoader;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.ShellQuotedParamsFilePreProcessor;
+import com.google.devtools.common.options.*;
+
 import java.io.IOError;
 import java.io.IOException;
 import java.io.InputStream;
@@ -851,6 +847,11 @@ class Desugar {
   }
 
   public static void main(String[] args) throws Exception {
+    if(args.length == 0) {
+      System.out.println(Options.getUsage(DesugarOptions.class));
+      return;
+    }
+
     // It is important that this method is called first. See its javadoc.
     Path dumpDirectory = createAndRegisterLambdaDumpDirectory();
     verifyLambdaDumpDirectoryRegistered(dumpDirectory);
