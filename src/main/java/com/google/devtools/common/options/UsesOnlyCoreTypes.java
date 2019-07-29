@@ -25,7 +25,7 @@ import java.util.List;
 
 /**
  * Applied to an {@link OptionsBase} subclass to indicate that all of its options fields have types
- * chosen from coreTypes. Any subclasses of the class to which it's applied must also
+ * chosen from {@link #coreTypes}. Any subclasses of the class to which it's applied must also
  * satisfy the same property.
  *
  * <p>Options classes with this annotation are serializable and deeply immutable, except that the

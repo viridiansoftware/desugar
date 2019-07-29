@@ -512,7 +512,7 @@ public final class OptionProcessor extends AbstractProcessor {
   }
 
   /**
-   * Prints an error message &amp; fails the compilation.
+   * Prints an error message & fails the compilation.
    *
    * @param e The element which has caused the error. Can be null
    * @param msg The error message

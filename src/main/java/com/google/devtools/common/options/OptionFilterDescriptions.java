@@ -22,19 +22,21 @@ public class OptionFilterDescriptions {
 
   /** The order that the categories should be listed in. */
   static OptionDocumentationCategory[] documentationOrder = {
-      OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      OptionDocumentationCategory.EXECUTION_STRATEGY,
-      OptionDocumentationCategory.TOOLCHAIN,
-      OptionDocumentationCategory.OUTPUT_SELECTION,
-      OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      OptionDocumentationCategory.INPUT_STRICTNESS,
-      OptionDocumentationCategory.SIGNING,
-      OptionDocumentationCategory.TESTING,
-      OptionDocumentationCategory.QUERY,
-      OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
-      OptionDocumentationCategory.LOGGING,
-      OptionDocumentationCategory.GENERIC_INPUTS,
-      OptionDocumentationCategory.UNCATEGORIZED
+    OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+    OptionDocumentationCategory.EXECUTION_STRATEGY,
+    OptionDocumentationCategory.TOOLCHAIN,
+    OptionDocumentationCategory.OUTPUT_SELECTION,
+    OptionDocumentationCategory.OUTPUT_PARAMETERS,
+    OptionDocumentationCategory.INPUT_STRICTNESS,
+    OptionDocumentationCategory.SIGNING,
+    OptionDocumentationCategory.STARLARK_SEMANTICS,
+    OptionDocumentationCategory.TESTING,
+    OptionDocumentationCategory.QUERY,
+    OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
+    OptionDocumentationCategory.LOGGING,
+    OptionDocumentationCategory.GENERIC_INPUTS,
+    OptionDocumentationCategory.REMOTE,
+    OptionDocumentationCategory.UNCATEGORIZED
   };
 
   static ImmutableMap<OptionDocumentationCategory, String> getOptionCategoriesEnumDescription(
@@ -73,6 +75,10 @@ public class OptionFilterDescriptions {
             OptionDocumentationCategory.SIGNING,
             "Options that affect the signing outputs of a build")
         .put(
+            OptionDocumentationCategory.STARLARK_SEMANTICS,
+            "This option affects semantics of the Starlark language or the build API accessible to "
+                + "BUILD files, .bzl files, or WORKSPACE files.")
+        .put(
             OptionDocumentationCategory.TESTING,
             "Options that govern the behavior of the test environment or test runner")
         .put(
@@ -82,7 +88,8 @@ public class OptionFilterDescriptions {
         .put(
             OptionDocumentationCategory.GENERIC_INPUTS,
             "Options specifying or altering a generic input to a Bazel command that does not fall "
-                + "into other categories.");
+                + "into other categories.")
+        .put(OptionDocumentationCategory.REMOTE, "Remote caching and execution options");
     return optionCategoriesBuilder.build();
   }
 

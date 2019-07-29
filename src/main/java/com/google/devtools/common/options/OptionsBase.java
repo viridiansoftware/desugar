@@ -14,12 +14,12 @@
 
 package com.google.devtools.common.options;
 
+import com.google.common.collect.Maps;
 import com.google.common.escape.CharEscaperBuilder;
 import com.google.common.escape.Escaper;
-import java.lang.reflect.Field;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Base class for all options classes. Extend this class, adding public instance fields annotated
@@ -34,7 +34,9 @@ import java.util.Map;
  * or from an array of command-line arguments:
  *
  * <pre>
- *   OptionsParser parser = OptionsParser.newOptionsParser(X.class);
+ *   OptionsParser parser = OptionsParser.builder()
+ *       .optionsClasses(X.class)
+ *       .build();
  *   parser.parse("--host", "localhost", "--port", "80");
  *   X x = parser.getOptions(X.class);
  * </pre>
@@ -63,21 +65,22 @@ public abstract class OptionsBase {
    * inherited ones. The mapping is a copy, so subsequent mutations to it or to this object are
    * independent. Entries are sorted alphabetically.
    */
-  public final <O extends OptionsBase> Map<String, Object> asMap() {
-    // Generic O is needed to tell the type system that the toMap() call is safe.
-    // The casts are safe because "this" is an instance of "getClass()"
-    // which subclasses OptionsBase.
-    @SuppressWarnings("unchecked")
-    O castThis = (O) this;
-    @SuppressWarnings("unchecked")
-    Class<O> castClass = (Class<O>) getClass();
-
-    Map<String, Object> map = new LinkedHashMap<>();
-    for (Map.Entry<Field, Object> entry : OptionsParser.toMap(castClass, castThis).entrySet()) {
-      OptionDefinition optionDefinition = OptionDefinition.extractOptionDefinition(entry.getKey());
-      map.put(optionDefinition.getOptionName(), entry.getValue());
+  public final Map<String, Object> asMap() {
+    List<OptionDefinition> definitions = OptionsData.getAllOptionDefinitionsForClass(getClass());
+    Map<String, Object> map = Maps.newLinkedHashMapWithExpectedSize(definitions.size());
+    for (OptionDefinition definition : definitions) {
+      map.put(definition.getOptionName(), getValueFromDefinition(definition));
     }
     return map;
+  }
+
+  /** Returns the value of the option described by {@code definition}. */
+  public final Object getValueFromDefinition(OptionDefinition definition) {
+    try {
+      return definition.getField().get(this);
+    } catch (IllegalAccessException e) {
+      throw new IllegalStateException("All options fields of options classes should be public", e);
+    }
   }
 
   @Override
@@ -91,8 +94,13 @@ public abstract class OptionsBase {
    */
   public final String cacheKey() {
     StringBuilder result = new StringBuilder(getClass().getName()).append("{");
+    result.append(mapToCacheKey(asMap()));
+    return result.append("}").toString();
+  }
 
-    for (Map.Entry<String, Object> entry : asMap().entrySet()) {
+  public static String mapToCacheKey(Map<String, Object> optionsMap) {
+    StringBuilder result = new StringBuilder();
+    for (Map.Entry<String, Object> entry : optionsMap.entrySet()) {
       result.append(entry.getKey()).append("=");
 
       Object value = entry.getValue();
@@ -110,15 +118,25 @@ public abstract class OptionsBase {
       }
       result.append(", ");
     }
-
-    return result.append("}").toString();
+    return result.toString();
   }
 
   @Override
+  @SuppressWarnings("EqualsGetClass") // Options can only be equal if they are of the same type.
   public final boolean equals(Object that) {
-    return that != null &&
-        this.getClass() == that.getClass() &&
-        this.asMap().equals(((OptionsBase) that).asMap());
+    if (this == that) {
+      return true;
+    }
+    if (that == null || !getClass().equals(that.getClass())) {
+      return false;
+    }
+    OptionsBase other = (OptionsBase) that;
+    for (OptionDefinition def : OptionsParser.getOptionDefinitions(getClass())) {
+      if (!Objects.equals(getValueFromDefinition(def), other.getValueFromDefinition(def))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @Override

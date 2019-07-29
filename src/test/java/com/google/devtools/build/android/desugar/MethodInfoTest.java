@@ -1,4 +1,4 @@
-// Copyright 2016 The Bazel Authors. All rights reserved.
+// Copyright 2017 The Bazel Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,17 +13,21 @@
 // limitations under the License.
 package com.google.devtools.build.android.desugar;
 
-import com.google.auto.value.AutoValue;
+import static com.google.common.truth.Truth.assertThat;
 
-/** A value class to store the fields information. */
-@AutoValue
-public abstract class FieldInfo {
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-  static FieldInfo create(String owner, String name, String desc) {
-    return new AutoValue_FieldInfo(owner, name, desc);
+/** Test for {@link MethodInfo} */
+@RunWith(JUnit4.class)
+public class MethodInfoTest {
+
+  @Test
+  public void testMethodInfoAreCorrectlySet() {
+    MethodInfo method = MethodInfo.create("owner", "name", "desc");
+    assertThat(method.owner()).isEqualTo("owner");
+    assertThat(method.name()).isEqualTo("name");
+    assertThat(method.desc()).isEqualTo("desc");
   }
-
-  public abstract String owner();
-  public abstract String name();
-  public abstract String desc();
 }

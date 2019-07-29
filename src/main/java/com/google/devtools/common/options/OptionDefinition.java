@@ -251,7 +251,7 @@ public class OptionDefinition implements Comparable<OptionDefinition> {
         || getConverter() instanceof BoolOrEnumConverter;
   }
 
-  /** Returns the evaluated default value for this option &amp; memoizes the result. */
+  /** Returns the evaluated default value for this option & memoizes the result. */
   public Object getDefaultValue() {
     if (defaultValue != null || isSpecialNullDefault()) {
       return defaultValue;

@@ -13,8 +13,6 @@
 // limitations under the License.
 package com.google.devtools.common.options.processor;
 
-import com.google.devtools.common.options.Option;
-
 import javax.lang.model.element.Element;
 
 /** Exception that indicates a problem in the processing of an {@link Option}. */

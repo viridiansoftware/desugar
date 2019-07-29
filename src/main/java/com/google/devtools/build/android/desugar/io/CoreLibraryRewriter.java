@@ -78,6 +78,7 @@ public class CoreLibraryRewriter {
       case "java/lang/Object":
       case "java/lang/String":
       case "java/lang/Throwable":
+      case "java/lang/Module":
         return true;
 
       default: // fall out

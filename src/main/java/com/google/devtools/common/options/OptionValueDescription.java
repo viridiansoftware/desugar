@@ -18,6 +18,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ListMultimap;
+import com.google.devtools.common.options.OptionPriority.PriorityCategory;
 import com.google.devtools.common.options.OptionsParser.ConstructionException;
 import java.util.Collection;
 import java.util.Comparator;
@@ -195,7 +196,7 @@ public abstract class OptionValueDescription {
         Object newValue = parsedOption.getConvertedValue();
         // Output warnings if there is conflicting options set different values in a way that might
         // not have been obvious to the user, such as through expansions and implicit requirements.
-        if (!effectiveValue.equals(newValue)) {
+        if (effectiveValue != null && !effectiveValue.equals(newValue)) {
           boolean samePriorityCategory =
               parsedOption
                   .getPriority()
@@ -221,6 +222,10 @@ public abstract class OptionValueDescription {
                         + "option by %s",
                     optionDefinition, optionThatDependsOnEffectiveValue));
           } else if (samePriorityCategory
+              && parsedOption
+                  .getPriority()
+                  .getPriorityCategory()
+                  .equals(PriorityCategory.COMMAND_LINE)
               && ((optionThatExpandedToEffectiveValue == null) && (expandedFrom != null))) {
             // Create a warning if an expansion option overrides an explicit option:
             warnings.add(
@@ -285,17 +290,14 @@ public abstract class OptionValueDescription {
     }
 
     @Override
-    public List<Object> getValue() {
+    public ImmutableList<Object> getValue() {
       // Sort the results by option priority and return them in a new list. The generic type of
       // the list is not known at runtime, so we can't use it here.
-      return optionValues
-          .asMap()
-          .entrySet()
-          .stream()
+      return optionValues.asMap().entrySet().stream()
           .sorted(Comparator.comparing(Map.Entry::getKey))
           .map(Map.Entry::getValue)
           .flatMap(Collection::stream)
-          .collect(Collectors.toList());
+          .collect(ImmutableList.toImmutableList());
     }
 
     @Override

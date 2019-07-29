@@ -13,24 +13,19 @@
 // limitations under the License.
 package com.google.devtools.build.android.desugar;
 
-import static com.google.common.truth.Truth.assertThat;
-
-import org.junit.Ignore;
-import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 /**
- * Test that exercises classes in the {@code testdata} package. This is meant to be run against a
- * desugared version of those classes, which in turn exercise various desugaring features.
+ * Variant of {@link DesugarJava8FunctionalTest} that doesn't expect any bridge methods already
+ * present on functional interfaces to be also present on generated classes, even where functional
+ * interfaces are defined in other compilations, which requires compiling against regular jar files
+ * instead of a classpath of -hjars.
  */
 @RunWith(JUnit4.class)
-public class DesugarCoreLibraryFunctionalTest {
+public final class DesugarJava8LikeAndroidStudioFunctionalTest extends DesugarJava8FunctionalTest {
 
-  @Ignore("Unable to get running via Gradle")
-  @Test
-  public void testAutoboxedTypeLambda() {
-    AutoboxedTypes.Lambda lambdaUse = AutoboxedTypes.autoboxedTypeLambda(1);
-    assertThat(lambdaUse.charAt("Karen")).isEqualTo("a");
+  public DesugarJava8LikeAndroidStudioFunctionalTest() {
+    super(/*expectBridgesFromSeparateTarget*/ false, /*expectDefaultMethods*/ true);
   }
 }

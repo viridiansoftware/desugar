@@ -17,7 +17,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.objectweb.asm.Opcodes.ACC_STATIC;
 import static org.objectweb.asm.Opcodes.ACC_SYNTHETIC;
-import static org.objectweb.asm.Opcodes.ASM7;
 import static org.objectweb.asm.Opcodes.INVOKEINTERFACE;
 import static org.objectweb.asm.Opcodes.INVOKESTATIC;
 import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
@@ -39,6 +38,7 @@ import javax.annotation.Nullable;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.ClassRemapper;
 import org.objectweb.asm.commons.Remapper;
 import org.objectweb.asm.tree.MethodNode;
@@ -46,11 +46,11 @@ import org.objectweb.asm.tree.MethodNode;
 /**
  * Desugar try-with-resources. This class visitor intercepts calls to the following methods, and
  * redirect them to ThrowableExtension.
- * {@code Throwable.addSuppressed(Throwable)}
- * {@code Throwable.getSuppressed()}
- * {@code Throwable.printStackTrace()}
- * {@code Throwable.printStackTrace(PrintStream)}
- * {@code Throwable.printStackTrace(PringWriter)}
+ * <li>{@code Throwable.addSuppressed(Throwable)}
+ * <li>{@code Throwable.getSuppressed()}
+ * <li>{@code Throwable.printStackTrace()}
+ * <li>{@code Throwable.printStackTrace(PrintStream)}
+ * <li>{@code Throwable.printStackTrace(PringWriter)}
  */
 public class TryWithResourcesRewriter extends ClassVisitor {
 
@@ -131,7 +131,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
       Set<String> visitedExceptionTypes,
       AtomicInteger numOfTryWithResourcesInvoked,
       boolean hasCloseResourceMethod) {
-    super(ASM7, classVisitor);
+    super(Opcodes.ASM7, classVisitor);
     this.classLoader = classLoader;
     this.visitedExceptionTypes = visitedExceptionTypes;
     this.numOfTryWithResourcesInvoked = numOfTryWithResourcesInvoked;
@@ -185,7 +185,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
     }
     if (isSyntheticCloseResourceMethod(access, name, desc)) {
       checkState(closeResourceMethod == null, "The TWR rewriter has been used.");
-      closeResourceMethod = new MethodNode(ASM7, access, name, desc, signature, exceptions);
+      closeResourceMethod = new MethodNode(Opcodes.ASM7, access, name, desc, signature, exceptions);
       // Run the TWR desugar pass over the $closeResource(Throwable, AutoCloseable) first, for
       // example, to rewrite calls to AutoCloseable.close()..
       TryWithResourceVisitor twrVisitor =
@@ -223,6 +223,10 @@ public class TryWithResourcesRewriter extends ClassVisitor {
   }
 
   private boolean isInterface(String className) {
+    // A generated class from desugaring a lambda expression or member reference isn't an interface.
+    if (isDesugaredLambdaClass(className)) {
+      return false;
+    }
     try {
       Class<?> klass = classLoader.loadClass(className);
       return klass.isInterface();
@@ -263,7 +267,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
         MethodVisitor methodVisitor,
         ClassLoader classLoader,
         @Nullable BytecodeTypeInference typeInference) {
-      super(ASM7, methodVisitor);
+      super(Opcodes.ASM7, methodVisitor);
       this.classLoader = classLoader;
       this.internalName = internalName;
       this.methodSignature = methodSignature;
@@ -320,7 +324,9 @@ public class TryWithResourcesRewriter extends ClassVisitor {
               methodSignature);
           String resourceClassName = resourceClassInternalName.get().replace('/', '.');
           checkState(
-              hasCloseMethod(resourceClassName),
+              // For a resource class initialized from a lambda expression or an member reference,
+              // it can implicitly be resolved with a close method.
+              isDesugaredLambdaClass(resourceClassName) || hasCloseMethod(resourceClassName),
               "The resource class %s should have a close() method.",
               resourceClassName);
         }
@@ -432,7 +438,7 @@ public class TryWithResourcesRewriter extends ClassVisitor {
     public MethodVisitor visitMethod(
         int access, String name, String desc, String signature, String[] exceptions) {
       MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
-      return new MethodVisitor(ASM7, mv) {
+      return new MethodVisitor(Opcodes.ASM7, mv) {
         @Override
         public void visitMethodInsn(
             int opcode, String owner, String name, String desc, boolean itf) {
@@ -449,5 +455,9 @@ public class TryWithResourcesRewriter extends ClassVisitor {
         }
       };
     }
+  }
+
+  private static boolean isDesugaredLambdaClass(String qualifiedClassName) {
+    return qualifiedClassName.contains("$$Lambda$");
   }
 }

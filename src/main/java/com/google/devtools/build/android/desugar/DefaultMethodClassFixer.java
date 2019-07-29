@@ -18,14 +18,16 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSortedSet;
 import com.google.devtools.build.android.desugar.io.BitFlags;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.Map;
+import java.util.TreeMap;
 import javax.annotation.Nullable;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -44,6 +46,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 public class DefaultMethodClassFixer extends ClassVisitor {
 
+  private final boolean useGeneratedBaseClasses;
   private final ClassReaderFactory classpath;
   private final ClassReaderFactory bootclasspath;
   private final ClassLoader targetLoader;
@@ -55,17 +58,23 @@ public class DefaultMethodClassFixer extends ClassVisitor {
   private String internalName;
   private ImmutableList<String> directInterfaces;
   private String superName;
+  /** Interface whose companion was chosen as base class, if any. */
+  @Nullable private Class<?> newSuperName;
   /** This method node caches <clinit>, and flushes out in {@code visitEnd()}; */
   private MethodNode clInitMethodNode;
 
+  private ImmutableSortedSet<Class<?>> interfacesToStub;
+
   public DefaultMethodClassFixer(
       ClassVisitor dest,
+      boolean useGeneratedBaseClasses,
       ClassReaderFactory classpath,
       DependencyCollector depsCollector,
       @Nullable CoreLibrarySupport coreLibrarySupport,
       ClassReaderFactory bootclasspath,
       ClassLoader targetLoader) {
     super(Opcodes.ASM7, dest);
+    this.useGeneratedBaseClasses = useGeneratedBaseClasses;
     this.classpath = classpath;
     this.coreLibrarySupport = coreLibrarySupport;
     this.bootclasspath = bootclasspath;
@@ -90,14 +99,70 @@ public class DefaultMethodClassFixer extends ClassVisitor {
         name);
     this.directInterfaces = ImmutableList.copyOf(interfaces);
     this.superName = superName;
+
+    if (!isInterface
+        && (mayNeedInterfaceStubsForEmulatedSuperclass()
+            || defaultMethodsDefined(directInterfaces))) {
+      TreeMap<Class<?>, Long> allInterfaces = new TreeMap<>(SubtypeComparator.INSTANCE);
+      for (String direct : interfaces) {
+        if (InterfaceDesugaring.getCompanionClassName(direct).equals(name)) {
+          checkState(useGeneratedBaseClasses, "%s shouldn't implement %s", name, direct);
+          continue; // InterfaceDesugaring already made stubs for this interface
+        }
+        // Loading ensures all transitively implemented interfaces can be loaded, which is necessary
+        // to produce correct default method stubs in all cases.  We could do without classloading
+        // but it's convenient to rely on Class.isAssignableFrom to compute subtype relationships,
+        // and we'd still have to insist that all transitively implemented interfaces can be loaded.
+        // We don't load the visited class, however, in case it's generated.
+        Class<?> itf = loadFromInternal(direct);
+        collectInterfaces(itf, allInterfaces);
+      }
+      if (mayNeedInterfaceStubsForEmulatedSuperclass()) {
+        // Collect interfaces inherited from emulated superclasses as well, to handle things like
+        // extending AbstractList without explicitly implementing List.
+        for (Class<?> clazz = loadFromInternal(superName);
+            clazz != null;
+            clazz = clazz.getSuperclass()) {
+          for (Class<?> itf : clazz.getInterfaces()) {
+            collectInterfaces(itf, allInterfaces);
+          }
+        }
+      }
+
+      if (useGeneratedBaseClasses && "java/lang/Object".equals(superName)) {
+        // If the class directly extends Object, use the generated base class for the interface with
+        // the most default methods instead.  This can help avoid stubbed default methods when
+        // they're already defined in the base class.
+        // This is an imperfect heuristic, not least b/c we don't know yet what methods would need
+        // to be stubbed, but we decide this here up-front b/c that lets us fix up the class's
+        // constructors' super calls when we see them.
+        // Note inherited default methods are included in the count, so we will choose subtypes over
+        // supertypes, which is desirable.
+        long maxBaseMethodCount = 0;
+        for (Map.Entry<Class<?>, Long> itf : allInterfaces.entrySet()) {
+          if (itf.getValue() > maxBaseMethodCount) {
+            maxBaseMethodCount = itf.getValue();
+            newSuperName = itf.getKey();
+            superName = InterfaceDesugaring.getCompanionClassName(internalName(itf.getKey()));
+            signature = null; // Changing superclass invalidates signature
+          }
+        }
+        if (newSuperName != null && !bootclasspath.isKnown(internalName(newSuperName))) {
+          // Record dependency on the chosen companion class
+          depsCollector.assumeCompanionClass(
+              internalName, InterfaceDesugaring.getCompanionClassName(internalName(newSuperName)));
+        }
+      }
+      interfacesToStub = ImmutableSortedSet.copyOfSorted(allInterfaces.navigableKeySet());
+    } else {
+      interfacesToStub = ImmutableSortedSet.of();
+    }
     super.visit(version, access, name, signature, superName, interfaces);
   }
 
   @Override
   public void visitEnd() {
-    if (!isInterface
-        && (mayNeedInterfaceStubsForEmulatedSuperclass()
-            || defaultMethodsDefined(directInterfaces))) {
+    if (!interfacesToStub.isEmpty()) {
       // Inherited methods take precedence over default methods, so visit all superclasses and
       // figure out what methods they declare before stubbing in any missing default methods.
       recordInheritedMethods();
@@ -133,11 +198,11 @@ public class DefaultMethodClassFixer extends ClassVisitor {
       if (!iterator.hasNext()) {
         return false;
       }
-      AbstractInsnNode first = iterator.next();
-      if (!(first instanceof MethodInsnNode)) {
+      AbstractInsnNode insn = iterator.next();
+      if (!(insn instanceof MethodInsnNode)) {
         return false;
       }
-      MethodInsnNode methodInsnNode = (MethodInsnNode) first;
+      MethodInsnNode methodInsnNode = (MethodInsnNode) insn;
       if (methodInsnNode.getOpcode() != Opcodes.INVOKESTATIC
           || !methodInsnNode.owner.equals(companion)
           || !methodInsnNode.name.equals(
@@ -150,14 +215,6 @@ public class DefaultMethodClassFixer extends ClassVisitor {
           "Inconsistent method desc: %s vs %s",
           methodInsnNode.desc,
           InterfaceDesugaring.COMPANION_METHOD_TO_TRIGGER_INTERFACE_CLINIT_DESC);
-
-      if (!iterator.hasNext()) {
-        return false;
-      }
-      AbstractInsnNode second = iterator.next();
-      if (second.getOpcode() != Opcodes.POP) {
-        return false;
-      }
     }
     return true;
   }
@@ -196,7 +253,14 @@ public class DefaultMethodClassFixer extends ClassVisitor {
       clInitMethodNode = new MethodNode(access, name, desc, signature, exceptions);
       return clInitMethodNode;
     }
-    return super.visitMethod(access, name, desc, signature, exceptions);
+
+    MethodVisitor dest = super.visitMethod(access, name, desc, signature, exceptions);
+    if (newSuperName != null && "<init>".equals(name)) {
+      // Since we changed the base class we need to fix up super constructor calls.
+      return new ConstructorFixer(
+          dest, InterfaceDesugaring.getCompanionClassName(internalName(newSuperName)));
+    }
+    return dest;
   }
 
   private boolean mayNeedInterfaceStubsForEmulatedSuperclass() {
@@ -206,37 +270,16 @@ public class DefaultMethodClassFixer extends ClassVisitor {
   }
 
   private void stubMissingDefaultAndBridgeMethods() {
-    TreeSet<Class<?>> allInterfaces = new TreeSet<>(SubtypeComparator.INSTANCE);
-    for (String direct : directInterfaces) {
-      // Loading ensures all transitively implemented interfaces can be loaded, which is necessary
-      // to produce correct default method stubs in all cases.  We could do without classloading but
-      // it's convenient to rely on Class.isAssignableFrom to compute subtype relationships, and
-      // we'd still have to insist that all transitively implemented interfaces can be loaded.
-      // We don't load the visited class, however, in case it's a generated lambda class.
-      Class<?> itf = loadFromInternal(direct);
-      collectInterfaces(itf, allInterfaces);
-    }
-
     Class<?> superclass = loadFromInternal(superName);
     boolean mayNeedStubsForSuperclass = mayNeedInterfaceStubsForEmulatedSuperclass();
-    if (mayNeedStubsForSuperclass) {
-      // Collect interfaces inherited from emulated superclasses as well, to handle things like
-      // extending AbstractList without explicitly implementing List.
-      for (Class<?> clazz = superclass; clazz != null; clazz = clazz.getSuperclass()) {
-        for (Class<?> itf : superclass.getInterfaces()) {
-          collectInterfaces(itf, allInterfaces);
-        }
-      }
-    }
-    for (Class<?> interfaceToVisit : allInterfaces) {
+    for (Class<?> interfaceToVisit : interfacesToStub) {
       // if J extends I, J is allowed to redefine I's default methods.  The comparator we used
       // above makes sure we visit J before I in that case so we can use J's definition.
       if (!mayNeedStubsForSuperclass && interfaceToVisit.isAssignableFrom(superclass)) {
         // superclass is also rewritten and already implements this interface, so we _must_ skip it.
         continue;
       }
-      stubMissingDefaultAndBridgeMethods(
-          interfaceToVisit.getName().replace('.', '/'), mayNeedStubsForSuperclass);
+      stubMissingDefaultAndBridgeMethods(internalName(interfaceToVisit), mayNeedStubsForSuperclass);
     }
   }
 
@@ -270,25 +313,91 @@ public class DefaultMethodClassFixer extends ClassVisitor {
   private Class<?> loadFromInternal(String internalName) {
     try {
       return targetLoader.loadClass(internalName.replace('/', '.'));
-    } catch (ClassNotFoundException e) {
+    } catch (ClassNotFoundException | NoClassDefFoundError e) {
       throw new IllegalStateException(
-          "Couldn't load " + internalName + ", is the classpath complete?", e);
+          "Couldn't load " + internalName + " to stub default methods for " + this.internalName, e);
     }
   }
 
-  private void collectInterfaces(Class<?> itf, Set<Class<?>> dest) {
+  /** Returns the internal name used for this class in bytecode. */
+  static String internalName(Class<?> clazz) {
+    return clazz.getName().replace('.', '/');
+  }
+
+  private void collectInterfaces(Class<?> itf, Map<Class<?>, Long> dest) {
     checkArgument(itf.isInterface());
-    if (!dest.add(itf)) {
+    if (dest.containsKey(itf)) {
       return;
+    }
+    if (useGeneratedBaseClasses && hasCompanionClass(itf)) {
+      // Count inherited and declared default methods
+      long defaultMethodCount = Arrays.stream(itf.getMethods()).filter(Method::isDefault).count();
+      dest.put(itf, defaultMethodCount);
+    } else {
+      // Use -1 if there's no base class we could use.  This makes sure we don't try to use a
+      // companion class as base class that doesn't exist.
+      dest.put(itf, -1L);
     }
     for (Class<?> implemented : itf.getInterfaces()) {
       collectInterfaces(implemented, dest);
     }
   }
 
+  private boolean hasCompanionClass(Class<?> itf) {
+    checkArgument(itf.isInterface());
+    if (Arrays.stream(itf.getDeclaredMethods()).noneMatch(m -> m.isDefault() && !m.isBridge())) {
+      return false;
+    }
+    String implemented = internalName(itf);
+    if (implemented.startsWith("java/") || implemented.startsWith("__desugar__/java/")) {
+      return coreLibrarySupport != null
+          && (coreLibrarySupport.isRenamedCoreLibrary(implemented)
+              || coreLibrarySupport.isEmulatedCoreClassOrInterface(implemented));
+    } else {
+      return !bootclasspath.isKnown(implemented);
+    }
+  }
+
   private void recordInheritedMethods() {
     InstanceMethodRecorder recorder =
         new InstanceMethodRecorder(mayNeedInterfaceStubsForEmulatedSuperclass());
+    if (newSuperName != null) {
+      checkState(useGeneratedBaseClasses);
+      // If we're using a generated base class, walk the implemented interfaces and record default
+      // methods we won't need to stub.  That reflects the methods that will be in the generated
+      // base class (and its superclasses, if applicable), without looking at the generated class.
+      // We go through sub-interfaces before their super-interfaces (same order as when we stub)
+      // to encounter overriding before overridden default methods.  We don't record methods from
+      // interfaces the chosen base class doesn't implement, even if those methods also appear in
+      // interfaces we would normally record later.  That ensures we generate a stub when a default
+      // method is available in the base class but needs to be overridden due to an overriding
+      // default method in a sub-interface not implemented by the base class.
+      HashSet<String> allSeen = new HashSet<>();
+      for (Class<?> itf : interfacesToStub) {
+        boolean willBeInBaseClass = itf.isAssignableFrom(newSuperName);
+        for (Method m : itf.getDeclaredMethods()) {
+          if (!m.isDefault()) {
+            continue;
+          }
+          String desc = Type.getMethodDescriptor(m);
+          if (coreLibrarySupport != null) {
+            // Foreshadow any type renaming to avoid issues with double-desugaring (b/111447199)
+            desc = coreLibrarySupport.getRemapper().mapMethodDesc(desc);
+          }
+          String methodKey = m.getName() + ":" + desc;
+          if (allSeen.add(methodKey) && willBeInBaseClass) {
+            // Only record never-seen methods, and only for super-types of newSuperName (see longer
+            // explanation above)
+            instanceMethods.add(methodKey);
+          }
+        }
+      }
+
+      // Fall through to the logic below to record j.l.Object's methods.
+      checkState(superName.equals("java/lang/Object"));
+    }
+
+    // Walk superclasses
     String internalName = superName;
     while (internalName != null) {
       ClassReader bytecode = bootclasspath.readIfKnown(internalName);
@@ -299,14 +408,6 @@ public class DefaultMethodClassFixer extends ClassVisitor {
       }
       bytecode.accept(recorder, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG);
       internalName = bytecode.getSuperName();
-    }
-  }
-
-  private void recordIfInstanceMethod(int access, String name, String desc) {
-    if (BitFlags.noneSet(access, Opcodes.ACC_STATIC)) {
-      // Record all declared instance methods, including abstract, bridge, and native methods, as
-      // they all take precedence over default methods.
-      instanceMethods.add(name + ":" + desc);
     }
   }
 
@@ -365,6 +466,10 @@ public class DefaultMethodClassFixer extends ClassVisitor {
    */
   private boolean defaultMethodsDefined(ImmutableList<String> interfaces) {
     for (String implemented : interfaces) {
+      if (useGeneratedBaseClasses
+          && InterfaceDesugaring.getCompanionClassName(implemented).equals(internalName)) {
+        continue; // InterfaceDesugaring already made stubs for this interface
+      }
       ClassReader bytecode;
       if (bootclasspath.isKnown(implemented)) {
         if (coreLibrarySupport != null
@@ -410,7 +515,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
     // Note that an exception is that, if a bridge method is for a default interface method, javac
     // will NOT generate the bridge method in the implementing class. So we need extra logic to
     // handle these bridge methods.
-    return isNonBridgeDefaultMethod(access) && !instanceMethods.contains(name + ":" + desc);
+    return isNonBridgeDefaultMethod(access) && !recordedInstanceMethod(name, desc);
   }
 
   private static boolean isNonBridgeDefaultMethod(int access) {
@@ -426,7 +531,27 @@ public class DefaultMethodClassFixer extends ClassVisitor {
   private boolean shouldStubAsBridgeDefaultMethod(int access, String name, String desc) {
     return BitFlags.isSet(access, Opcodes.ACC_BRIDGE | Opcodes.ACC_PUBLIC)
         && BitFlags.noneSet(access, Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC)
-        && !instanceMethods.contains(name + ":" + desc);
+        && !recordedInstanceMethod(name, desc);
+  }
+
+  private void recordIfInstanceMethod(int access, String name, String desc) {
+    if (BitFlags.noneSet(access, Opcodes.ACC_STATIC)) {
+      // Record all declared instance methods, including abstract, bridge, and native methods, as
+      // they all take precedence over default methods.
+      if (coreLibrarySupport != null) {
+        // Foreshadow any type renaming to avoid issues with double-desugaring (b/111447199)
+        desc = coreLibrarySupport.getRemapper().mapMethodDesc(desc);
+      }
+      instanceMethods.add(name + ":" + desc);
+    }
+  }
+
+  private boolean recordedInstanceMethod(String name, String desc) {
+    if (coreLibrarySupport != null) {
+      // Foreshadow any type renaming to avoid issues with double-desugaring (b/111447199)
+      desc = coreLibrarySupport.getRemapper().mapMethodDesc(desc);
+    }
+    return instanceMethods.contains(name + ":" + desc);
   }
 
   /**
@@ -469,10 +594,10 @@ public class DefaultMethodClassFixer extends ClassVisitor {
         // definitions conflict, but see stubMissingDefaultMethods() for how we deal with default
         // methods redefined in interfaces extending another.
         recordIfInstanceMethod(access, name, desc);
+        String owner = InterfaceDesugaring.getCompanionClassName(stubbedInterfaceName);
         if (!isBootclasspathInterface) {
           // Don't record these dependencies, as we can't check them
-          depsCollector.assumeCompanionClass(
-              internalName, InterfaceDesugaring.getCompanionClassName(stubbedInterfaceName));
+          depsCollector.assumeCompanionClass(internalName, owner);
         }
 
         // Add this method to the class we're desugaring and stub in a body to call the default
@@ -484,7 +609,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
             DefaultMethodClassFixer.this.visitMethod(access, name, desc, (String) null, exceptions);
 
         String receiverName = stubbedInterfaceName;
-        String owner = InterfaceDesugaring.getCompanionClassName(stubbedInterfaceName);
+        String calledMethodName = name + InterfaceDesugaring.DEFAULT_COMPANION_METHOD_SUFFIX;
         if (mayNeedStubsForSuperclass) {
           // Reflect what CoreLibraryInvocationRewriter would do if it encountered a super-call to a
           // moved implementation of an emulated method.  Equivalent to emitting the invokespecial
@@ -493,8 +618,9 @@ public class DefaultMethodClassFixer extends ClassVisitor {
               coreLibrarySupport.getCoreInterfaceRewritingTarget(
                   Opcodes.INVOKESPECIAL, superName, name, desc, /*itf=*/ false);
           if (emulatedImplementation != null && !emulatedImplementation.isInterface()) {
-            receiverName = emulatedImplementation.getName().replace('.', '/');
+            receiverName = internalName(emulatedImplementation);
             owner = checkNotNull(coreLibrarySupport.getMoveTarget(receiverName, name));
+            calledMethodName = name;
           }
         }
 
@@ -508,9 +634,9 @@ public class DefaultMethodClassFixer extends ClassVisitor {
         stubMethod.visitMethodInsn(
             Opcodes.INVOKESTATIC,
             owner,
-            name,
+            calledMethodName,
             InterfaceDesugaring.companionDefaultMethodDescriptor(receiverName, desc),
-            /*itf=*/ false);
+            /*isInterface=*/ false);
         stubMethod.visitInsn(neededType.getReturnType().getOpcode(Opcodes.IRETURN));
 
         stubMethod.visitMaxs(0, 0); // rely on class writer to compute these
@@ -532,9 +658,17 @@ public class DefaultMethodClassFixer extends ClassVisitor {
           int slot = 0;
           stubMethod.visitVarInsn(Opcodes.ALOAD, slot++); // load the receiver
           Type neededType = Type.getType(bridged);
-          for (Type arg : neededType.getArgumentTypes()) {
-            // TODO(b/73586397): insert downcasts if necessary
+          Type[] neededArgTypes = neededType.getArgumentTypes();
+          Type[] parameterTypes = Type.getArgumentTypes(desc);
+          for (int i = 0; i < neededArgTypes.length; ++i) {
+            Type arg = neededArgTypes[i];
             stubMethod.visitVarInsn(arg.getOpcode(Opcodes.ILOAD), slot);
+            if (!arg.equals(parameterTypes[i])) {
+              checkState(arg.getSort() == Type.ARRAY || arg.getSort() == Type.OBJECT,
+                  "Can't cast parameter %s from in bridge for %s.%s%s to %s",
+                  i, stubbedInterfaceName, name, desc, arg.getClassName());
+              stubMethod.visitTypeInsn(Opcodes.CHECKCAST, arg.getInternalName());
+            }
             slot += arg.getSize();
           }
           // Just call the bridged method directly on the visited class using invokevirtual
@@ -543,7 +677,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
               internalName,
               name,
               neededType.getDescriptor(),
-              /*itf=*/ false);
+              /*isInterface=*/ false);
           stubMethod.visitInsn(neededType.getReturnType().getOpcode(Opcodes.IRETURN));
 
           stubMethod.visitMaxs(0, 0); // rely on class writer to compute these
@@ -573,22 +707,52 @@ public class DefaultMethodClassFixer extends ClassVisitor {
     @Nullable
     private Method findBridgedMethod(String name, String desc) {
       Type[] paramTypes = Type.getArgumentTypes(desc);
+      Type returnType = Type.getReturnType(desc);
       Class<?> itf = loadFromInternal(stubbedInterfaceName);
       checkArgument(itf.isInterface(), "Should be an interface: %s", stubbedInterfaceName);
-      Method result = null;
+
+      // 1. Find the bridge method we're trying to implement
+      Method bridge = null;
       for (Method m : itf.getDeclaredMethods()) {
-        if (m.isBridge()) {
+        if (m.isBridge()
+            && m.getName().equals(name)
+            && Arrays.equals(paramTypes, Type.getArgumentTypes(m))
+            && returnType.equals(Type.getReturnType(m))) {
+          bridge = m;
+          break;
+        }
+      }
+      checkState(bridge != null, "Couldn't find bridge %s.%s %s", stubbedInterfaceName, name, desc);
+      checkState(bridge.getParameterCount() == paramTypes.length);
+
+      // 2. Try to find the method being bridged
+      Method result = null;
+      next_method:
+      for (Method m : itf.getDeclaredMethods()) {
+        if (m.isBridge() || Modifier.isStatic(m.getModifiers())) {
           continue;
         }
         if (!m.getName().equals(name)) {
           continue;
         }
-        // For now, only support specialized return types (which don't require casts)
-        // TODO(b/73586397): Make this work for other kinds of bridges in core library interfaces
+
         if (Arrays.equals(paramTypes, Type.getArgumentTypes(m))) {
-          checkState(result == null,
-              "Found multiple bridge target %s and %s for descriptor %s", result, m, desc);
-          return result = m;
+          // All argument types match, only return type will differ: this is the method we want
+          return m;
+        } else if (m.getParameterCount() == bridge.getParameterCount()) {
+          for (int i = 0; i < m.getParameterCount(); ++i) {
+            if (!bridge.getParameterTypes()[i].isAssignableFrom(m.getParameterTypes()[i])) {
+              continue next_method;
+            }
+          }
+
+          // All of m's parameter types are subtypes of the bridge's parameter types (or primitives)
+          if (result == null) {
+            result = m;
+          } else {
+            // Bail if we find multiple methods that could be bridged
+            return null;
+          }
         }
       }
       return result;
@@ -663,7 +827,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
         String signature,
         String superName,
         String[] interfaces) {
-      checkArgument(BitFlags.noneSet(access, Opcodes.ACC_INTERFACE));
+      checkArgument(!BitFlags.isInterface(access));
       className = name;  // updated every time we start visiting another superclass
       super.visit(version, access, name, signature, superName, interfaces);
     }
@@ -672,7 +836,7 @@ public class DefaultMethodClassFixer extends ClassVisitor {
     public MethodVisitor visitMethod(
         int access, String name, String desc, String signature, String[] exceptions) {
       if (ignoreEmulatedMethods
-          && BitFlags.noneSet(access, Opcodes.ACC_STATIC) // short-circuit
+          && !BitFlags.isStatic(access) // short-circuit
           && coreLibrarySupport.getCoreInterfaceRewritingTarget(
                   Opcodes.INVOKEVIRTUAL, className, name, desc, /*itf=*/ false)
               != null) {
@@ -743,6 +907,58 @@ public class DefaultMethodClassFixer extends ClassVisitor {
         };
       }
       return null; // Do not care about the code.
+    }
+  }
+
+  /** Method visitor that changes super constructor calls to a new base class. */
+  private static class ConstructorFixer extends MethodVisitor {
+
+    private final String newSuperName;
+
+    /**
+     * This helps us find the very first constructor invocation we visit. We're looking for a
+     * sequence ALOAD_0 ; INVOKESPECIAL java.lang.Object() while avoiding "new Object()" which
+     * results in a NEW followed by the same INVOKESPECIAL for Object's constructor that we're
+     * looking for. Note that anonymous inner class constructors store captured variables into
+     * fields before calling super(), so we have to tolerate some unrelated logic, but since
+     * Object's constructor is parameterless we thankfully don't have to worry about handwritten
+     * code for constructor arguments.
+     */
+    private boolean looking = true;
+
+    ConstructorFixer(MethodVisitor dest, String newSuperName) {
+      super(Opcodes.ASM7, dest);
+      this.newSuperName = newSuperName;
+    }
+
+    @Override
+    public void visitMethodInsn(
+        int opcode, String owner, String name, String descriptor, boolean isInterface) {
+      if (looking
+          && opcode == Opcodes.INVOKESPECIAL
+          && "<init>".equals(name)
+          && "java/lang/Object".equals(owner)) {
+        // Call new base class's constructor instead of j.l.Object().  Note owner can be the
+        // visited class for this() constructor calls, and we don't need to touch those here.
+        owner = newSuperName;
+      }
+      // Since Object's constructor has no arguments it must be the very first INVOKE (because there
+      // can't be any preceding logic to set up constructor arguments), so stop looking regardless
+      // of whether we rewrote that INVOKE or not (but ignore inserted JaCoCo invocations).
+      if (looking && (opcode != Opcodes.INVOKESTATIC || !"$jacocoInit".equals(name))) {
+        looking = false;
+      }
+      super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+    }
+
+    @Override
+    public void visitTypeInsn(int opcode, String type) {
+      if (opcode == Opcodes.NEW && "java/lang/Object".equals(type)) {
+        // NEW java/lang/Object is followed by the very INVOKESPECIAL we're looking for, but we
+        // don't want to rewrite it.  Since there can't be a super() call after this, just stop.
+        looking = false;
+      }
+      super.visitTypeInsn(opcode, type);
     }
   }
 

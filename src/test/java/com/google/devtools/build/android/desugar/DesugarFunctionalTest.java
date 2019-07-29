@@ -278,7 +278,7 @@ public class DesugarFunctionalTest {
         .containsExactly(5L, 17L);
   }
 
-  @Ignore("Unable to get running via Gradle for DesugarJava8FunctionalTest")
+  @Ignore("Unable to get running via Gradle")
   @Test
   public void testLambdaWithInheritedBridgeMethods() throws Exception {
     assertThat(ConcreteFunction.toInt().apply("123456789")).isEqualTo(123456789);
@@ -299,6 +299,7 @@ public class DesugarFunctionalTest {
   }
 
   /** Tests lambdas with bridge methods when the implemented interface is in a separate target.*/
+  @Ignore("Unable to get running via Gradle")
   @Test
   public void testLambdaWithBridgeMethodsForInterfaceInSeparateTarget() {
     assertThat(ConcreteFunction.isInt().test(123456789L)).isTrue();
@@ -312,7 +313,7 @@ public class DesugarFunctionalTest {
         .hasLength(expectedBridgesFromSeparateTarget + 1);
   }
 
-  @Ignore("Unable to get running via Gradle for DesugarJava8FunctionalTest")
+  @Ignore("Unable to get running via Gradle")
   @Test
   public void testLambdaInInterfaceStaticInitializer() {
     assertThat(InterfaceWithLambda.DIGITS).containsExactly("0", "1").inOrder();

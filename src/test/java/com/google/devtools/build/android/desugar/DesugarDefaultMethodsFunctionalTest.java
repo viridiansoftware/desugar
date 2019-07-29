@@ -26,8 +26,6 @@ import java.lang.reflect.Parameter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -180,7 +178,6 @@ public final class DesugarDefaultMethodsFunctionalTest extends DesugarJava8Funct
   }
 
   /** Test for b/129719629. */
-  @Ignore("Unable to get running via Gradle")
   @Test
   public void parameterNamesAreOmittedOnDefaultMethodCompanions() throws Exception {
     Method method =
@@ -191,7 +188,6 @@ public final class DesugarDefaultMethodsFunctionalTest extends DesugarJava8Funct
         .isNotEqualTo("v12525d61e4b10b3e27bc280dd61e56728e3e8c27");
   }
 
-  @Ignore("Unable to get running via Gradle")
   @Test
   public void parameterAnnotationsAreOmittedOnDefaultMethodCompanions() throws Exception {
     Method method =
@@ -215,7 +211,6 @@ public final class DesugarDefaultMethodsFunctionalTest extends DesugarJava8Funct
     assertThat(fooInstance.value()).isEqualTo("custom-attr-value-2");
   }
 
-  @Ignore("Unable to get running via Gradle")
   @Test
   public void methodReturnTypeAnnotationsAreOmittedOnDefaultMethodCompanions() throws Exception {
     Method method =
@@ -226,7 +221,6 @@ public final class DesugarDefaultMethodsFunctionalTest extends DesugarJava8Funct
     assertThat(methodReturnTypeAnnotations).isEmpty();
   }
 
-  @Ignore("Unable to get running via Gradle")
   @Test
   public void parameterTypeAnnotationsAreOmittedOnDefaultMethodCompanion() throws Exception {
     Method method =
