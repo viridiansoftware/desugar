@@ -1,4 +1,4 @@
-[1.0.1-SNAPSHOT]
+[1.0.1]
 - Update to latest build from Bazel
 - Added usage info if no args passed to application
 - Added logging of desugared classes if verbose option is used
