@@ -21,7 +21,7 @@ public interface Converter<T> {
 
   /**
    * Convert a string into type T. Please note that we assume that converting the same string (if
-   * successful) will produce objects which are equal ({@link Object#equals)}).
+   * successful) will produce objects which are equal ({@link Object#equals(Object)} )}).
    */
   T convert(String input) throws OptionsParsingException;
 

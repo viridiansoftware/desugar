@@ -1,4 +1,7 @@
 [1.0.1-SNAPSHOT]
+- Update to latest build from Bazel
+- Added usage info if no args passed to application
+- Added logging of desugared classes if verbose option is used
 
 [1.0.0]
 - Initial release based on Android 28 version

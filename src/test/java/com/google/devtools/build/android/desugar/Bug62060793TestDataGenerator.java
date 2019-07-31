@@ -52,6 +52,8 @@ import static org.objectweb.asm.Opcodes.SWAP;
 import static org.objectweb.asm.Opcodes.V1_8;
 
 import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,28 +79,17 @@ public class Bug62060793TestDataGenerator {
   private static final String INTERFACE_TYPE_NAME = CLASS_NAME + "$Interface";
 
   public static void main(String[] args) throws IOException {
-    checkArgument(
-        args.length == 1,
-        "Usage: %s <output-jar>",
-        Bug62060793TestDataGenerator.class.getName());
-    Path outputJar = Paths.get(args[0]);
-
-    try (ZipOutputStream outZip =
-            new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(outputJar)))) {
-      String className = CLASS_NAME + ".class";
-      writeToZipFile(outZip, className, createClass());
-      String interfaceName = INTERFACE_TYPE_NAME + ".class";
-      writeToZipFile(outZip, interfaceName, createInterface());
-    }
+    String className = CLASS_NAME + ".class";
+    writeToZipFile(new FileOutputStream(new File("./ConstantArgumentsInLambda.class")), className, createClass());
+    String interfaceName = INTERFACE_TYPE_NAME + ".class";
+    writeToZipFile(new FileOutputStream(new File("./ConstantArgumentsInLambda$Interface.class")), interfaceName, createInterface());
   }
 
-  private static void writeToZipFile(ZipOutputStream outZip, String entryName, byte[] content)
+  private static void writeToZipFile(FileOutputStream outZip, String entryName, byte[] content)
       throws IOException {
-    ZipEntry result = new ZipEntry(entryName);
-    result.setTime(0L);
-    outZip.putNextEntry(result);
     outZip.write(content);
-    outZip.closeEntry();
+    outZip.flush();
+    outZip.close();
   }
 
   private static byte[] createClass() {

@@ -46,11 +46,13 @@ import org.objectweb.asm.tree.MethodNode;
 /**
  * Desugar try-with-resources. This class visitor intercepts calls to the following methods, and
  * redirect them to ThrowableExtension.
- * <li>{@code Throwable.addSuppressed(Throwable)}
- * <li>{@code Throwable.getSuppressed()}
- * <li>{@code Throwable.printStackTrace()}
- * <li>{@code Throwable.printStackTrace(PrintStream)}
- * <li>{@code Throwable.printStackTrace(PringWriter)}
+ * <ul>
+ * <li>{@code Throwable.addSuppressed(Throwable)}</li>
+ * <li>{@code Throwable.getSuppressed()}</li>
+ * <li>{@code Throwable.printStackTrace()}</li>
+ * <li>{@code Throwable.printStackTrace(PrintStream)}</li>
+ * <li>{@code Throwable.printStackTrace(PringWriter)}</li>
+ * </ul>
  */
 public class TryWithResourcesRewriter extends ClassVisitor {
 

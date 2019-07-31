@@ -622,7 +622,9 @@ class Desugar {
         // TODO(kmb): rule out that this happens or merge input file with what's in depsCollector
         continue;  // skip as we're writing a new file like this at the end or don't want it
       }
-      System.out.println("Desugar " + inputFilename);
+      if(options.verbose) {
+        System.out.println("Desugar " + inputFilename);
+      }
       try (InputStream content = inputFiles.getInputStream(inputFilename)) {
         // We can write classes uncompressed since they need to be converted to .dex format
         // for Android anyways. Resources are written as they were in the input jar to avoid
@@ -996,6 +998,10 @@ class Desugar {
   }
 
   public static void main(String[] args) throws Exception {
+    if(args.length == 0) {
+      System.out.println(Options.getUsage(DesugarOptions.class));
+      return;
+    }
     // It is important that this method is called first. See its javadoc.
     Path dumpDirectory = createAndRegisterLambdaDumpDirectory();
     verifyLambdaDumpDirectoryRegistered(dumpDirectory);
